@@ -5,7 +5,7 @@
 	"end":				.end, 
 	"tracks_processed": 0,
 	"title": 			( .show.title + " - " + 
-							(.start|strptime("%Y-%m-%dT%H:%M:%S.000000Z") | strftime("%Y, %b %d"))
+							(.start|strptime("%Y-%m-%dT%H:%M:%S.000000Z") | strftime("%Y-%m-%d"))
 	),
 	"audiourl":			.audio.url
 } | ( "REPLACE INTO broadcasts ",
