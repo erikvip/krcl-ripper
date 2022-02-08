@@ -1,0 +1,10 @@
+tmp/*
+*.mp3
+*.sqlite3
+db/*.sqlite3
+*.mp3
+*.aria2
+*.part
+tmp/*
+music/*
+*.bak
