@@ -6,7 +6,16 @@
 # This screws w/ all the date handling code...
 # Need to normalize / fix the timezone data...
 
+$db = new SQLite3('db/krcl-playlist-data.sqlite3');
+$db->enableExceptions(true);
+
 $broadcast_file=$_SERVER['argv'][1];
+if (is_numeric($broadcast_file)) {
+	$bid = $broadcast_file;
+	$where="broadcast_id=" . $bid;
+} else {
+	$where="audiourl LIKE '%".$db->escapeString(basename($broadcast_file)) . "'";
+}
 
 $fileprefix="mp3/";
 if ( isset($_SERVER['argv'][2]) ) {
@@ -22,11 +31,6 @@ if ( isset($_SERVER['argv'][3]) ) {
 	$outputpath=$_SERVER['argv'][3];
 }
 
-
-
-
-$db = new SQLite3('db/krcl-playlist-data.sqlite3');
-$db->enableExceptions(true);
 
 function query($query) {
 	global $db;
@@ -47,13 +51,31 @@ $sql="SELECT
 	b.end, 
 	b.audiourl, 
 	b.title
-	FROM broadcasts b JOIN shows s USING (show_id) WHERE audiourl LIKE '%".$db->escapeString($broadcast_file)."'";
+	FROM broadcasts b 
+		JOIN shows s USING (show_id) 
+	WHERE $where";
 
 $broadcast=query($sql);
 
 $bid=$broadcast[0]['broadcast_id'];
 #$q = "select (select strftime('%s', start) - strftime('%s',datetime(b.start,'-7 hour')) from playlists where broadcast_id=94191 order by start limit 1) as duration,datetime(start, '-7 hour') AS start,datetime(b.end, '-7 hour') as end,'Intro' as title,'NA' as artist, 'NA' as album from broadcasts b where broadcast_id=94191 UNION select strftime('%s', end) - strftime('%s', start) AS duration, start, end, title, artist, album from playlists p join songs using (song_id) where broadcast_id=94191 order by start ;";
-$q="SELECT * from playlists p join songs s using (song_id) where p.broadcast_id=$bid order by start";
+$q="
+	SELECT 
+		p.*, 
+		s.*, 
+		b.start AS show_start, 
+		b.end AS show_end, 
+		STRFTIME('%s', b.start) AS unix_show_start, 
+		STRFTIME('%s', b.end) AS unix_show_end,
+		STRFTIME('%s', p.start) AS unix_song_start, 
+		STRFTIME('%s', p.end) AS unix_song_end 
+	FROM playlists p 
+		JOIN songs s USING (song_id) 
+		JOIN broadcasts b USING (broadcast_id)
+	WHERE p.broadcast_id=$bid 
+	ORDER BY p.start 
+";
+#echo $q;exit;
 $playlist=query($q);
 
 $bdate = new DateTime($broadcast[0]['start'], new DateTimeZone('UTC'));
@@ -81,7 +103,18 @@ $index=1;
 $secs = $bdate->format("U");
 
 foreach($playlist as $i=>$t) {
-	$d = new DateTime( substr($t['start'],0,19), new DateTimeZone('America/Denver'));
+
+	# Well thy fixed the mis reporting UTC time zone thing...
+	# So if the song start/end is between the broadcsat start end, they're both in UTC
+	# But if the song start/end time is outside of the show start /end...then song is in America/Denver
+	if ( $t['unix_song_start'] >= $t['unix_show_start'] && $t['unix_song_start'] <= $t['unix_show_end'] )  {
+		# show is in UTC (fixed). This happened around 2022-02-14
+		$d = new DateTime( substr($t['start'],0,19), new DateTimeZone('UTC'));
+		$d->setTimeZone(new DateTimeZone('America/Denver'));
+	} else {
+		$d = new DateTime( substr($t['start'],0,19), new DateTimeZone('America/Denver'));
+	}
+
 	$duration = $d->format("U") - $secs;
 	$offset += $duration;
 	$index++;
