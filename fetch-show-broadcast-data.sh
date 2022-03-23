@@ -56,6 +56,10 @@ update_broadcasts() {
 	_sql='SELECT strftime("%s", start) FROM broadcasts WHERE start > DATE("now", "-14 day") AND tracks_processed=1 ORDER BY start DESC LIMIT 1;';
 	_ts_last_success=$(echo "${_sql}" | sqlite3 db/krcl-playlist-data.sqlite3); 
 	
+	if [[ "${_ts_last_success}" -eq "" ]]; then
+		_ts_last_success=$_ts_maxdate;
+	fi
+	
 	if [ "${_ts_maxdate}" -lt "${_ts_last_success}" ]; then
 		_ts_maxdate="${_ts_last_success}";
 	fi 
