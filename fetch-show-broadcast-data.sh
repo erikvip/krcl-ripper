@@ -2,6 +2,30 @@
 set -o nounset  # Fail when access undefined variable
 set -o errexit  # Exit when a command fails
 
+_search_days=14;
+_search_shows="all";
+
+cmdl=`getopt -o d:s: --long days:,shows: -- "$@"`
+eval set -- "$cmdl"
+while true ; do
+    case "$1" in
+    	-d|--days)
+			if [[ $2 =~ ^[0-9]+$ ]]; then
+				_search_days=$2;
+				shift 2;	
+			else 
+				exit 1
+			fi
+			;;
+		-s|--shows)
+			_search_shows=$2;
+			shift 2;
+			;;
+		*) 
+			break ;;			
+	esac
+done
+
 # Cache folder for API requests
 _KRCL_BROADCAST_CACHE_DIR="/tmp/krcl_broadcast_cache";
 mkdir -p "${_KRCL_BROADCAST_CACHE_DIR}";
@@ -47,13 +71,14 @@ _update_shows() {
 #_oldest=$(echo "SELECT IFNULL( max(start), DATETIME('now', '-30 day') ) from broadcasts WHERE start < datetime('now', '-12 hour');" | sqlite3 "db/krcl-playlist-data.sqlite3" );
 #t_oldest=$(TZ="America/Denver" date --date="${_oldest}" "+%s");
 update_broadcasts() {
-	_arg_maxdate=${1:-"2 weeks ago"};
+#	_arg_maxdate=${1:-"2 weeks ago"};
+	_arg_maxdate=${1:-"${_search_days} days ago"};
 	_ts_maxdate=$(TZ="America/Denver" date --date="${_arg_maxdate}" "+%s");
 	_ts_last=$(TZ="America/Denver" date --date="Now" "+%s");
 	_pg=0;
 	_baseurl="https://krcl-studio.creek.org/api/broadcasts?page=";
 
-	_sql='SELECT strftime("%s", start) FROM broadcasts WHERE start > DATE("now", "-14 day") AND tracks_processed=1 ORDER BY start DESC LIMIT 1;';
+	_sql='SELECT strftime("%s", start) FROM broadcasts WHERE start > DATE("now", "-'$_search_days' day") AND tracks_processed=1 ORDER BY start DESC LIMIT 1;';
 	_ts_last_success=$(echo "${_sql}" | sqlite3 db/krcl-playlist-data.sqlite3); 
 	
 	if [[ "${_ts_last_success}" -eq "" ]]; then

@@ -5,7 +5,9 @@ _sql=$(cat << END_QUERY
 		strftime("%H:%M:%S", p.end), 
 		sh.name, 
 		s.artist,
-		s.title 
+		s.title, 
+		strftime('%s', p.start) - strftime('%s', b.start),
+		b.audiourl
 	FROM playlists p 
 		join songs s using (song_id) 
 		join broadcasts b using (broadcast_id) 
