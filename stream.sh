@@ -11,17 +11,52 @@ if [ -z "$TMUX" ]; then
 	tmux new-session "./stream.sh"
 	exit 0;
 fi
-
+export _KRCL_LOGFILE=$(mktemp /tmp/krcl-logfile.XXXXX);
+_FZF_DEFAULT_OPTS='--bind "alt-up:execute(ncat_vlc volup)" --bind "alt-down:execute(ncat_vlc voldown)" --bind "alt-space:execute(ncat_vlc pause)"'
 _cvlc_cmd="vlc -I dummy -I ncurses --extraintf telnet --telnet-port 23456";
+
+tmux new-window -d -n log "tail -F -v '${_KRCL_LOGFILE}'"
 tmux split-pane -p 20 "$_cvlc_cmd"
 tmux select-pane -t 0
-
-_FZF_DEFAULT_OPTS='--bind "alt-up:execute(ncat_vlc volup)" --bind "alt-down:execute(ncat_vlc voldown)" --bind "alt-space:execute(ncat_vlc pause)"'
-
-export _KRCL_LOGFILE=$(mktemp /tmp/krcl-logfile.XXXXX);
+tmux set-option remain-on-exit off
 
 _CURL_PID=0;
 
+
+show_popup_help() {
+	tmux display-popup cat help-popup.txt	
+}
+export -f show_popup_help
+
+allsongs_list() {
+	_sql=$(cat << END_QUERY
+	SELECT 
+		sh.title || strftime(" %Y-%m-%d", b.start) AS start_time, 
+		substr(s.artist, 1, 25) || "|" || substr(s.title, 1, 60) AS title 
+	FROM playlists p 
+		join songs s using (song_id) 
+		join shows sh using (show_id) 
+		join broadcasts b using (broadcast_id) 
+	ORDER BY p.start DESC
+END_QUERY
+);
+ 
+	echo "$_sql" | sqlite3 -separator "|" db/krcl-playlist-data.sqlite3 \
+	| column -s '|' -t \
+	| fzf --tiebreak=index -d "|" \
+		--preview-window=top,0%,nofollow,nowrap \
+		--no-sort \
+		--reverse \
+		--header "All Songs View (press alt+b for broadcast view). Alt+h for help." \
+		--bind "alt-up:execute(ncat_vlc volup)" --bind "alt-down:execute(ncat_vlc voldown)" --bind "ctrl-space:execute(ncat_vlc pause)" --bind "alt-left:execute(ncat_vlc 'seek -5')" --bind "alt-right:execute(ncat_vlc 'seek +5')" \
+		--bind "esc:abort" \
+		--bind "home:abort" \
+		--bind "alt-b:execute(broadcast_list)" \
+		--bind "alt-h:execute(show_popup_help)" \
+		--bind "enter:preview:do_curl {}" \
+		--bind "double-click:preview:do_curl {}"
+}
+export -f allsongs_list
 broadcast_list() {
 	_sql=$(cat << END_QUERY
 	SELECT
@@ -33,6 +68,21 @@ broadcast_list() {
 	ORDER BY start DESC;
 END_QUERY
 );
+	_sql=$(cat << END_QUERY
+	SELECT 
+		b.broadcast_id || "|" 
+		|| sh.title || "|" 
+		|| strftime("%Y-%m-%d", b.start) || "|"
+		|| group_concat(s.artist || " - " || s.title)
+	FROM playlists p 
+		join songs s using (song_id) 
+		join shows sh using (show_id) 
+		join broadcasts b using (broadcast_id) 
+	GROUP BY
+		broadcast_id
+	ORDER BY p.start DESC
+END_QUERY
+);	
 
 	export -f do_curl
 
@@ -41,16 +91,22 @@ END_QUERY
 	echo "$_sql" | sqlite3 -separator "|" db/krcl-playlist-data.sqlite3 \
 	| column -s '|' -c 3 -t \
 	| fzf -d "|" --reverse \
+		--no-sort \
+		--no-hscroll \
+		--preview-window=right,50%,nofollow,nowrap,nocycle \
+		--header "Broadcast View (press alt+a for all songs view). Alt+h for help." \
 		--bind "alt-up:execute(ncat_vlc volup)" --bind "alt-down:execute(ncat_vlc voldown)" --bind "ctrl-space:execute(ncat_vlc pause)" --bind "alt-left:execute(ncat_vlc 'seek -5')" --bind "alt-right:execute(ncat_vlc 'seek +5')" \
 		--bind "shift-down:half-page-down" --bind "shift-up:half-page-up" \
 		--bind "pgdn:preview-half-page-down" --bind "pgup:preview-half-page-up" \
+		--bind "alt-a:execute(allsongs_list)" \
 		--bind "esc:execute(tmux kill-session)" \
 		--bind "esc:abort" \
+		--bind "alt-h:execute(show_popup_help)" \
 		--preview "preview_playlist {1..7}" \
 		--bind "enter:execute(show_playlist {1..7})" \
 		--bind "double-click:execute(show_playlist {1..7})"
 }
-
+export -f broadcast_list
 preview_playlist() {
 	broadcast_id="$1";
 	_sql="SELECT s.artist, s.title FROM playlists p  join songs s using (song_id) join broadcasts b using (broadcast_id) join shows sh using (show_id) WHERE b.broadcast_id=$broadcast_id ORDER BY p.start ASC";
@@ -127,11 +183,12 @@ END_QUERY
 	| column -s '|' -c 3 -t \
 	| tee -a $_KRCL_LOGFILE \
 	| fzf --reverse --disabled \
-		--preview-window=top,20%,nofollow,nowrap \
+		--preview-window=top,0%,nofollow,nowrap \
 		--header "The header" \
 		--bind "alt-up:execute(ncat_vlc volup)" --bind "alt-down:execute(ncat_vlc voldown)" --bind "ctrl-space:execute(ncat_vlc pause)" --bind "alt-left:execute(ncat_vlc 'seek -5')" --bind "alt-right:execute(ncat_vlc 'seek +5')" \
 		--bind "esc:abort" \
 		--bind "home:abort" \
+		--bind "alt-h:execute(show_popup_help)" \
 		--bind "enter:preview:do_curl {}" \
 		--bind "double-click:preview:do_curl {}" \
 		);
@@ -164,7 +221,7 @@ do_curl() {
 
 	curl -v --progress-bar --retry 10 --retry-delay 2 -A chrome \
 		$curl_opts 2>> $_KRCL_LOGFILE \
-		| pv -p -t -e -b -r --force --size $(( ${_rangeto} - ${_rangefrom} )) 2> "${_KRCL_LOGFILE}.progress" >> $_cachefile &
+		| pv -b -e -r --force --size $(( ${_rangeto} - ${_rangefrom} )) 2> "${_KRCL_LOGFILE}.progress" >> $_cachefile &
 
 #	_CURL_PID=$(pgrep --full "$curl_cmd");
 
@@ -181,8 +238,9 @@ do_curl() {
 
 	tmux set-window-option -g window-status-current-format ""
 	tmux set-option -g status-justify "centre"
-	tmux set-option -g status-left-length 80	
-	tmux set-option -g status-right-length 80	
+	tmux set-option -g status-style 'fg=brightwhite,bg=#013800'
+	tmux set-option -g status-left-length $(($COLUMNS - 50))
+	tmux set-option -g status-right-length 40	
 	tmux set-option -g status-right "#(cat ${_KRCL_LOGFILE}.progress | tr '\r' '\n' | tail -n1)"
 	tmux set-option -g status-interval 1
 
@@ -212,6 +270,7 @@ ncat_vlc() {
 	for verb in "$@"; do
 		_cmd="${_cmd}${verb}\r\n";
 	done
+	notify-send ncat_vlc "${_cmd}"
 	echo -e "ncat_vlc: ${_cmd}" >> $_KRCL_LOGFILE
 	echo -ne "${_cmd}" | ncat -t localhost 23456 2>&1 >> /tmp/krcl_ncat.log
 }
@@ -237,6 +296,7 @@ cleanup() {
 	rm $_KRCL_LOGFILE
 	rm "${_KRCL_LOGFILE}.progress"
 	pkill --full "$_cvlc_cmd"
+	tmux kill-window -t log
 
 }
 

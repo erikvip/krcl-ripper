@@ -1,0 +1,11 @@
+[1m[4mKey bindings(B[m
+
+ctrl+space	: pause playback
+alt+up		: vol up
+alt+down	: vol down
+alt+right	: skip 5s ahead
+alt+left	: skip 5s back
+
+alt+a or b 	: Switch all / broadcast
+		  view
+

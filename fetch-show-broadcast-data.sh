@@ -40,7 +40,7 @@ _tmpdata=$(mktemp);
 # Need to normalize / fix the timezone data...
 
 log() {
-	echo "$@"
+	echo "$@" > /dev/null
 }
 
 error() {
@@ -53,6 +53,21 @@ cleanup() {
 }
 
 trap cleanup EXIT
+
+function ProgressBar {
+    # Process data
+    _progress=$( awk "{ printf \"%0.2f\", (${1}*100/${2}*100)/100 }" <<< '');
+    _done=$( awk "{ printf \"%0.2f\", ${_progress}*4/10 }" <<< '' );
+    _left=$( awk "{ printf \"%0.0f\", 40-${_done} }" <<< '' );
+    _msg="${3}";
+
+    # Build progressbar string lengths
+    _done=$(printf "%${_done}s")
+    _left=$(printf "%${_left}s")
+
+    # Build progressbar strings and print the ProgressBar line
+    /usr/bin/printf "\r${_msg} Progress : [${_done// /#}${_left// /-}] ${_progress}%%"
+}
 
 # Shows
 _update_shows() {
@@ -124,9 +139,10 @@ fetch_broadcast_songs() {
 	if [ -e "${_json}" ]; then
 		# Cache file already exists, use it	
 		log "Cache hit: broadcast ${_bid} already saved at ${_json}";
+		echo
 	else 
 		# Fetch the broadcast data
-		log "Cache miss: fetching broadcast data from ${_url}";
+		#log "Cache miss: fetching broadcast data from ${_url}";
 		wget --user-agent "Firefox" -q -O "${_json}" "${_url}";
 	fi
 
@@ -146,16 +162,24 @@ fetch_broadcast_songs() {
 ########
 update_broadcast_songs() {
 	_sql=$(cat << END_QUERY
-		SELECT broadcast_id FROM broadcasts 
+		SELECT :field FROM broadcasts 
 		WHERE 
 			DATETIME(start) < DATETIME('now', '-12 hour') 
 			AND tracks_processed != 1 ORDER BY start DESC
 END_QUERY
 );
-	for _bid in $(echo "${_sql}" | sqlite3 db/krcl-playlist-data.sqlite3); do
-		log "Update broadcast songs for broadcast #${_bid}";
+	_total=$(echo "${_sql}" | sed 's/:field/count\(\*\)/g' | sqlite3 db/krcl-playlist-data.sqlite3);
+	_count=0; 
+	echo
+	echo "Updating updating broadcast songs";
+	for _bid in $(echo "${_sql}" | sed 's/:field/broadcast_id/g' | sqlite3 db/krcl-playlist-data.sqlite3); do
+		_count=$(( _count+1 ));
+
+		ProgressBar $_count $_total "\rUpdating broadcast song #${_count} of ${_total}"
+		#log "Update broadcast songs for broadcast #${_bid}";
 		fetch_broadcast_songs "${_bid}";
 	done
+	echo
 }
 update_broadcast_songs
 

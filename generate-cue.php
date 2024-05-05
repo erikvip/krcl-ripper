@@ -1,5 +1,6 @@
-<?php
+#!/usr/bin/php7.3
 
+<?php
 # @ TODO
 # The timezones are screwed up...the broadcast data reports it's in UTC timezone and it is
 # But the Playlist data reports UTC but *IT'S NOT UTC*. It's America/Denver, but claims Greenwich...
@@ -78,9 +79,16 @@ $q="
 #echo $q;exit;
 $playlist=query($q);
 
+if ( count($playlist) < 2 ) {
+	echo "ERROR: Playlist appears invalid:\n";
+	print_r($playlist);
+	echo $q;
+	exit(1);
+}
+
+
 $bdate = new DateTime($broadcast[0]['start'], new DateTimeZone('UTC'));
 $bdate->setTimeZone(new DateTimeZone('America/Denver'));
-
 
 $b = explode("/", $broadcast[0]['audiourl']);
 
@@ -169,3 +177,4 @@ if ($outputpath != "-") {
 	fwrite(STDERR, "File saved to STDOUT" . PHP_EOL);
 }
 
+exit(0);
