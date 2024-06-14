@@ -5,7 +5,6 @@ alt+up		: vol up
 alt+down	: vol down
 alt+right	: skip 5s ahead
 alt+left	: skip 5s back
-
-alt+a or b 	: Switch all / broadcast
-		  view
-
+alt+a or b 	: Switch [1m[4mA(B[mll / [1m[4mB(B[mroadcast view
+alt+c 		: Copy track data to clipboard
+alt+v 		: View track data

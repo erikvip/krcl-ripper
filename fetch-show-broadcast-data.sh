@@ -4,11 +4,16 @@ set -o errexit  # Exit when a command fails
 
 _search_days=14;
 _search_shows="all";
+_opt_nodelay=false;
 
-cmdl=`getopt -o d:s: --long days:,shows: -- "$@"`
+cmdl=`getopt -o d:s:n --long days:,shows:,now -- "$@"`
 eval set -- "$cmdl"
 while true ; do
     case "$1" in
+    	-n|--now)
+			_opt_nodelay=true;
+			shift
+		;;
     	-d|--days)
 			if [[ $2 =~ ^[0-9]+$ ]]; then
 				_search_days=$2;
@@ -40,7 +45,7 @@ _tmpdata=$(mktemp);
 # Need to normalize / fix the timezone data...
 
 log() {
-	echo "$@" > /dev/null
+	echo "$@" #> /dev/null
 }
 
 error() {
@@ -161,10 +166,15 @@ fetch_broadcast_songs() {
 ## Grab track / song data for each broadcast with tracks_processed!=1
 ########
 update_broadcast_songs() {
+	_sql_delay_time="-12 hour";
+	if [[ $_opt_nodelay == true ]]; then
+		_sql_delay_time="-1 second";
+	fi
+
 	_sql=$(cat << END_QUERY
 		SELECT :field FROM broadcasts 
 		WHERE 
-			DATETIME(start) < DATETIME('now', '-12 hour') 
+			DATETIME(start) < DATETIME('now', '${_sql_delay_time}') 
 			AND tracks_processed != 1 ORDER BY start DESC
 END_QUERY
 );
@@ -175,7 +185,7 @@ END_QUERY
 	for _bid in $(echo "${_sql}" | sed 's/:field/broadcast_id/g' | sqlite3 db/krcl-playlist-data.sqlite3); do
 		_count=$(( _count+1 ));
 
-		ProgressBar $_count $_total "\rUpdating broadcast song #${_count} of ${_total}"
+		ProgressBar $_count $_total "\rUpdating broadcast(#${_bid}) songs #${_count} of ${_total}"
 		#log "Update broadcast songs for broadcast #${_bid}";
 		fetch_broadcast_songs "${_bid}";
 	done

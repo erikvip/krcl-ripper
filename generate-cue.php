@@ -1,4 +1,4 @@
-#!/usr/bin/php7.3
+ #!/usr/bin/php7.3
 
 <?php
 # @ TODO
@@ -142,6 +142,7 @@ foreach($playlist as $i=>$t) {
 	echo "\tPERFORMER \"{$t['artist']}\"\n";
 	echo "\tTITLE \"{$t['title']}\"\n";
 	echo "\tINDEX 01 {$m}:{$s}:{$ms}\n";
+	echo "\tREM offset: $offset\n";
 }
 
 

@@ -2,7 +2,7 @@
 #set -o nounset  # Fail when access undefined variable
 #set -o errexit  # Exit when a command fails
 #trap "sleep 30" ERR
-export _KRCL_BITRATE=192;
+export _KRCL_BITRATE=188;
 export _KRCL_STREAM_CACHEDIR="cache/"
 export _KRCL_BUFFER_SECS=15;
 
@@ -28,6 +28,17 @@ show_popup_help() {
 }
 export -f show_popup_help
 
+copy_to_clipboard() {
+	echo $* | xsel -i --clipboard
+	tmux display-message "Copied to clipboard"
+}
+export -f copy_to_clipboard
+show_popup() {
+	artist=$1;
+	title=$2;
+	tmux display-popup "echo \"$*\" | fold --spaces --width 60"
+}
+export -f show_popup
 allsongs_list() {
 	_sql=$(cat << END_QUERY
 	SELECT 
@@ -53,6 +64,8 @@ END_QUERY
 		--bind "home:abort" \
 		--bind "alt-b:execute(broadcast_list)" \
 		--bind "alt-h:execute(show_popup_help)" \
+		--bind "alt-c:execute(copy_to_clipboard)" \
+		--bind "alt-v:execute(show_popup {})" \
 		--bind "enter:preview:do_curl {}" \
 		--bind "double-click:preview:do_curl {}"
 }
@@ -102,6 +115,8 @@ END_QUERY
 		--bind "esc:execute(tmux kill-session)" \
 		--bind "esc:abort" \
 		--bind "alt-h:execute(show_popup_help)" \
+		--bind "alt-c:execute(copy_to_clipboard)" \
+		--bind "alt-v:execute(show_popup {})" \
 		--preview "preview_playlist {1..7}" \
 		--bind "enter:execute(show_playlist {1..7})" \
 		--bind "double-click:execute(show_playlist {1..7})"
@@ -137,7 +152,8 @@ END_QUERY
 );
 
 	_offset=$(sqlite3_query "$_sql")
-	export _skip=$(( $_offset * 1024 / 8 ));
+	#export _skip=$(( $_offset * 1024 / 8 ));
+	export _skip=0;
 
 #--		( SELECT strftime('%s', p2.start) - strftime('%s', broadcast_start) FROM playlists p2 WHERE p2.start < broadcast_start ORDER BY p2.start DESC LIMIT 1) ,
 	_sql=$(cat << END_QUERY	
@@ -146,7 +162,7 @@ END_QUERY
 		title, 
 		pos, 
 		len,
---		$_skip,
+--		$_offset,
 		"${_KRCL_STREAM_CACHEDIR}stream-b" || broadcast_id || "-p" || playlist_id || "-s" || song_id || "-sh" || show_id || ".mp3",
 		( (pos * $_KRCL_BITRATE * 1024 / 8) + $_skip) AS range_start,
 		( ( (pos+len) * $_KRCL_BITRATE * 1024 / 8) + $_skip) AS range_end,
@@ -184,11 +200,13 @@ END_QUERY
 	| tee -a $_KRCL_LOGFILE \
 	| fzf --reverse --disabled \
 		--preview-window=top,0%,nofollow,nowrap \
-		--header "The header" \
+		--header "Press Home to go back. Alt+h for help." \
 		--bind "alt-up:execute(ncat_vlc volup)" --bind "alt-down:execute(ncat_vlc voldown)" --bind "ctrl-space:execute(ncat_vlc pause)" --bind "alt-left:execute(ncat_vlc 'seek -5')" --bind "alt-right:execute(ncat_vlc 'seek +5')" \
 		--bind "esc:abort" \
 		--bind "home:abort" \
 		--bind "alt-h:execute(show_popup_help)" \
+		--bind "alt-c:execute(copy_to_clipboard {})" \
+		--bind 'alt-v:execute(show_popup {})' \
 		--bind "enter:preview:do_curl {}" \
 		--bind "double-click:preview:do_curl {}" \
 		);
@@ -296,14 +314,15 @@ cleanup() {
 	rm $_KRCL_LOGFILE
 	rm "${_KRCL_LOGFILE}.progress"
 	pkill --full "$_cvlc_cmd"
+	pkill --full "tail -F -v ${_KRCL_LOGFILE}"
 	tmux kill-window -t log
+
 
 }
 
 trap cleanup EXIT
 
 broadcast_list
-
 
 
 
