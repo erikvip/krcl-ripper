@@ -54,7 +54,7 @@ error() {
 }
 
 cleanup() {
-	rm -f ${_tmpdata}.sql ${_tmpdata}.json;
+	echo rm -f ${_tmpdata}.sql ${_tmpdata}.json;
 }
 
 trap cleanup EXIT
@@ -82,7 +82,7 @@ _update_shows() {
  	| jq -r '.data[] | "REPLACE INTO shows (show_id, title, name, updated_at) VALUES ( \(.id), \"\(.title)\", \"\(.name)\", \"\(.updated_at)\"); "' \
  	| sqlite3 db/krcl-playlist-data.sqlite3
 }
-#_update_shows
+_update_shows
 
 ######
 ## Fetch broadcasts from api at https://krcl-studio.creek.org/api/broadcasts?page=...
@@ -98,7 +98,7 @@ update_broadcasts() {
 	_pg=0;
 	_baseurl="https://krcl-studio.creek.org/api/broadcasts?page=";
 
-	_sql='SELECT strftime("%s", start) FROM broadcasts WHERE start > DATE("now", "-'$_search_days' day") AND tracks_processed=1 ORDER BY start DESC LIMIT 1;';
+	_sql='SELECT strftime("%s", start) FROM broadcasts WHERE start < DATE("now", "-'$_search_days' day") AND tracks_processed=1 ORDER BY start DESC LIMIT 1;';
 	_ts_last_success=$(echo "${_sql}" | sqlite3 db/krcl-playlist-data.sqlite3); 
 	
 	if [[ "${_ts_last_success}" -eq "" ]]; then
@@ -108,7 +108,6 @@ update_broadcasts() {
 	if [ "${_ts_maxdate}" -lt "${_ts_last_success}" ]; then
 		_ts_maxdate="${_ts_last_success}";
 	fi 
-
 	# Grab each page and process
 	while [ "${_ts_last}" -gt "${_ts_maxdate}" ]; do
 		_pg=$(( ${_pg}+1 ));
@@ -120,12 +119,13 @@ update_broadcasts() {
 		wget --user-agent="Firefox" -q -O "${_tmpdata}.json" "${_url}" || error "wget failed";
 		
 		_ts_last=$(cat "${_tmpdata}.json" | jq '[.data[].start | strptime("%Y-%m-%dT%H:%M:%S.000000Z") | mktime] | min');
-		log "Oldest timestamp on page #${_pg}: ${_ts_last}";
+		log "Oldest timestamp on page #${_pg}: ${_ts_last} $(date --date=@${_ts_last})";
 		jq -r -f "update_broadcasts.jq" "${_tmpdata}.json" >> "${_tmpdata}.sql"; 
 	done
 	log "Updating broadcast data from ${_tmpdata}.sql"; 
 	sqlite3 db/krcl-playlist-data.sqlite3 < "${_tmpdata}.sql";
 }
+
 update_broadcasts; 
 
 
@@ -149,8 +149,9 @@ fetch_broadcast_songs() {
 		# Fetch the broadcast data
 		#log "Cache miss: fetching broadcast data from ${_url}";
 		wget --user-agent "Firefox" -q -O "${_json}" "${_url}";
+#		echo -ne "${_url}\n  out=${_json}\n";
 	fi
-
+#}
 	jq -r -f update_playlists.jq "$_json" \
 		| sed 's/\\"/""/g' \
 		| sqlite3 db/krcl-playlist-data.sqlite3
@@ -182,13 +183,39 @@ END_QUERY
 	_count=0; 
 	echo
 	echo "Updating updating broadcast songs";
-	for _bid in $(echo "${_sql}" | sed 's/:field/broadcast_id/g' | sqlite3 db/krcl-playlist-data.sqlite3); do
-		_count=$(( _count+1 ));
+	bids=();
+	_ariaconf=$(mktemp);
 
-		ProgressBar $_count $_total "\rUpdating broadcast(#${_bid}) songs #${_count} of ${_total}"
+	for _bid in $(echo "${_sql}" | sed 's/:field/broadcast_id/g' | sqlite3 db/krcl-playlist-data.sqlite3); do
+		bids+=($_bid);
+		_count=$(( _count+1 ));
+		#ProgressBar $_count $_total "\rUpdating broadcast(#${_bid}) songs #${_count} of ${_total}"
 		#log "Update broadcast songs for broadcast #${_bid}";
-		fetch_broadcast_songs "${_bid}";
+		#fetch_broadcast_songs "${_bid}";
+		#echo -ne ""
+		#${_KRCL_BROADCAST_CACHE_DIR}
+		
+		_file="broadcast-${_bid}.json";		
+		if [ -e "${_KRCL_BROADCAST_CACHE_DIR}/${_file}" ]; then
+			log "aria2 cache hit: ${_KRCL_BROADCAST_CACHE_DIR}/${_file} ";
+		else 
+			_url="https://krcl.studio.creek.org/api/broadcasts/${_bid}";
+			echo -ne "${_url}\n  dir=${_KRCL_BROADCAST_CACHE_DIR}\n  out=${_file}\n" | tee -a ${_ariaconf};
+		fi
 	done
+
+	echo "Saved to aria config file at ${_ariaconf}";
+	echo "Downloading ${_count} broadcasts using aria2";
+
+	aria2c -i "${_ariaconf}";
+
+	#IFS=" \n";
+	for b in "${bids[@]}"; do
+		echo "fetch_broadcast_songs ${b}";
+		fetch_broadcast_songs "${b}";
+	done	
+
+	#	exit 1;
 	echo
 }
 update_broadcast_songs
