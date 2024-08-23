@@ -58,6 +58,7 @@ END_QUERY
 		--preview-window=top,0%,nofollow,nowrap \
 		--no-sort \
 		--reverse \
+		--exact \
 		--header "All Songs View (press alt+b for broadcast view). Alt+h for help." \
 		--bind "alt-up:execute(ncat_vlc volup)" --bind "alt-down:execute(ncat_vlc voldown)" --bind "ctrl-space:execute(ncat_vlc pause)" --bind "alt-left:execute(ncat_vlc 'seek -5')" --bind "alt-right:execute(ncat_vlc 'seek +5')" \
 		--bind "esc:abort" \
@@ -106,6 +107,8 @@ END_QUERY
 	| fzf -d "|" --reverse \
 		--no-sort \
 		--no-hscroll \
+		--exact \
+		--no-extended \
 		--preview-window=right,50%,nofollow,nowrap,nocycle \
 		--header "Broadcast View (press alt+a for all songs view). Alt+h for help." \
 		--bind "alt-up:execute(ncat_vlc volup)" --bind "alt-down:execute(ncat_vlc voldown)" --bind "ctrl-space:execute(ncat_vlc pause)" --bind "alt-left:execute(ncat_vlc 'seek -5')" --bind "alt-right:execute(ncat_vlc 'seek +5')" \
@@ -124,7 +127,7 @@ END_QUERY
 export -f broadcast_list
 preview_playlist() {
 	broadcast_id="$1";
-	_sql="SELECT s.artist, s.title FROM playlists p  join songs s using (song_id) join broadcasts b using (broadcast_id) join shows sh using (show_id) WHERE b.broadcast_id=$broadcast_id ORDER BY p.start ASC";
+	_sql="SELECT PRINTF('%-25s', SUBSTR(s.artist, 1, 25)) AS artist, s.title FROM playlists p  join songs s using (song_id) join broadcasts b using (broadcast_id) join shows sh using (show_id) WHERE b.broadcast_id=$broadcast_id ORDER BY p.start ASC";
 	echo "$_sql" | sqlite3 -list db/krcl-playlist-data.sqlite3 | column -s '|' -c 2 -t
 
 }
@@ -198,7 +201,7 @@ END_QUERY
 	info=$(echo "$_sql" | sqlite3 -list db/krcl-playlist-data.sqlite3 \
 	| column -s '|' -c 3 -t \
 	| tee -a $_KRCL_LOGFILE \
-	| fzf --reverse --disabled \
+	| fzf --reverse --no-extended --exact \
 		--preview-window=top,0%,nofollow,nowrap \
 		--header "Press Home to go back. Alt+h for help." \
 		--bind "alt-up:execute(ncat_vlc volup)" --bind "alt-down:execute(ncat_vlc voldown)" --bind "ctrl-space:execute(ncat_vlc pause)" --bind "alt-left:execute(ncat_vlc 'seek -5')" --bind "alt-right:execute(ncat_vlc 'seek +5')" \
@@ -257,7 +260,8 @@ do_curl() {
 	tmux set-window-option -g window-status-current-format ""
 	tmux set-option -g status-justify "centre"
 	tmux set-option -g status-style 'fg=brightwhite,bg=#013800'
-	tmux set-option -g status-left-length $(($COLUMNS - 50))
+	#tmux set-option -g status-left-length $(($COLUMNS - 20))
+	tmux set-option -g status-left-length 40	
 	tmux set-option -g status-right-length 40	
 	tmux set-option -g status-right "#(cat ${_KRCL_LOGFILE}.progress | tr '\r' '\n' | tail -n1)"
 	tmux set-option -g status-interval 1
@@ -274,8 +278,8 @@ do_curl() {
 	ncat_vlc "add `readlink -e $_cachefile`"
 	tmux set-option status-left "$trackinfo    "
 
-
-	#stdbuf -i0 -o0 tail -f "${_KRCL_LOGFILE}.progress" | tr "\r" "\n" > /dev/stderr &
+#	echo $trackinfo "$COLUMNS" >> /tmp/trackinfo.log	
+#stdbuf -i0 -o0 tail -f "${_KRCL_LOGFILE}.progress" | tr "\r" "\n" > /dev/stderr &
 	#while [ `pgrep -c curl` > 0 ]; do
 		#( tail -F "${_KRCL_LOGFILE}.progress" > /dev/stderr ) & 
 	#	sleep 0.1
