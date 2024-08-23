@@ -15,7 +15,8 @@ _sql=$(cat << END_QUERY
 		b.audiourl
 	FROM broadcasts b 
 		join shows sh using (show_id) 
-	ORDER BY start DESC LIMIT 100;
+	ORDER BY start DESC 
+	-- LIMIT 100;
 END_QUERY
 );
 
