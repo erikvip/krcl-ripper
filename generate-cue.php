@@ -1,5 +1,4 @@
- #!/usr/bin/php7.3
-
+#!/usr/bin/php7.3
 <?php
 # @ TODO
 # The timezones are screwed up...the broadcast data reports it's in UTC timezone and it is

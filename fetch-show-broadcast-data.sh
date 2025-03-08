@@ -6,7 +6,7 @@ _search_days=14;
 _search_shows="all";
 _opt_nodelay=false;
 
-cmdl=`getopt -o d:s:n --long days:,shows:,now -- "$@"`
+cmdl=`getopt -o d:s:nl --long days:,shows:,now,last -- "$@"`
 eval set -- "$cmdl"
 while true ; do
     case "$1" in
@@ -22,6 +22,10 @@ while true ; do
 				exit 1
 			fi
 			;;
+		-l|--last)
+			_search_days="AUTO";
+			shift
+		;;
 		-s|--shows)
 			_search_shows=$2;
 			shift 2;
@@ -59,6 +63,38 @@ cleanup() {
 
 trap cleanup EXIT
 
+_c_clearline=$(echo -ne "\033[2K");
+_c_lnreset="${_c_clearline}"$(echo -ne "\n");
+_c_up=$(tput cuu1);
+_c_down=$(tput cud1);
+
+_c_normal=$(tput sgr0);
+_c_bold=$(tput bold);
+_c_underline=$(tput smul);
+_c_underline_end=$(tput rmul);
+_c_blink=$(tput blink);
+_c_standout=$(tput smso);
+_c_standout_end=$(tput rmso);
+
+# Check how many days ago we last updated
+_sql="SELECT 
+	CAST(CEIL(JULIANDAY('now') - JULIANDAY(DATE(start, '-2 days'))) AS INT) as last_update_days_ago 
+	FROM broadcasts 
+	WHERE audiourl IS NOT NULL
+	ORDER BY start desc 
+	limit 1;
+	";
+_daysago=$(echo "$_sql" | sqlite3 db/krcl-playlist-data.sqlite3);
+echo "Last update was ${_daysago} days ago";
+if [[ "${_search_days}" == "AUTO" ]]; then
+	if [[ ! ${_daysago} =~ ^[0-9]+$ ]]; then
+		error "ERROR: Could not determine last update (days ago is NaN!). Specify with --days or use the default...."
+		exit 1;
+	fi
+	_search_days="${_daysago}";
+fi
+
+
 function ProgressBar {
     # Process data
     _progress=$( awk "{ printf \"%0.2f\", (${1}*100/${2}*100)/100 }" <<< '');
@@ -77,10 +113,14 @@ function ProgressBar {
 # Shows
 _update_shows() {
 	echo "Updating show data"
-	urls=$(seq -s " " -f  "https://krcl-studio.creek.org/api/shows?page=%0.0f" 1 5)
-	wget -q -O - $urls \
- 	| jq -r '.data[] | "REPLACE INTO shows (show_id, title, name, updated_at) VALUES ( \(.id), \"\(.title)\", \"\(.name)\", \"\(.updated_at)\"); "' \
- 	| sqlite3 db/krcl-playlist-data.sqlite3
+	for url in $(seq -s " " -f  "https://krcl-studio.creek.org/api/shows?page=%0.0f" 1 1); do 
+#	urls=$(seq -s " " -f  "https://krcl-studio.creek.org/api/shows?page=%0.0f" 1 5)
+		echo -ne "${_c_lnreset}fetch ${url}";
+		wget -q -O - $url \
+	 	| jq -r '.data[] | "REPLACE INTO shows (show_id, title, name, updated_at) VALUES ( \(.id), \"\(.title)\", \"\(.name)\", \"\(.updated_at)\"); "' \
+	 	| sqlite3 db/krcl-playlist-data.sqlite3
+	 done
+	 echo
 }
 _update_shows
 
