@@ -76,6 +76,15 @@ _c_blink=$(tput blink);
 _c_standout=$(tput smso);
 _c_standout_end=$(tput rmso);
 
+if [[ -s $(realpath "${HOME}/bin/hr") ]]; then
+	source $(realpath "${HOME}/bin/hr");
+else
+	hr() {
+		printf '=%.0s' {1..40} && echo
+	}
+fi 
+
+
 # Check how many days ago we last updated
 _sql="SELECT 
 	CAST(CEIL(JULIANDAY('now') - JULIANDAY(DATE(start, '-2 days'))) AS INT) as last_update_days_ago 
@@ -85,6 +94,7 @@ _sql="SELECT
 	limit 1;
 	";
 _daysago=$(echo "$_sql" | sqlite3 db/krcl-playlist-data.sqlite3);
+
 echo "Last update was ${_daysago} days ago";
 if [[ "${_search_days}" == "AUTO" ]]; then
 	if [[ ! ${_daysago} =~ ^[0-9]+$ ]]; then
@@ -93,7 +103,6 @@ if [[ "${_search_days}" == "AUTO" ]]; then
 	fi
 	_search_days="${_daysago}";
 fi
-
 
 function ProgressBar {
     # Process data
@@ -184,7 +193,6 @@ fetch_broadcast_songs() {
 	if [ -e "${_json}" ]; then
 		# Cache file already exists, use it	
 		log "Cache hit: broadcast ${_bid} already saved at ${_json}";
-		echo
 	else 
 		# Fetch the broadcast data
 		#log "Cache miss: fetching broadcast data from ${_url}";
@@ -196,7 +204,11 @@ fetch_broadcast_songs() {
 		| sed 's/\\"/""/g' \
 		| sqlite3 db/krcl-playlist-data.sqlite3
 
-	log "Updated ${_bid}";
+	_broadcast_friendly_name=$(jq -r '"\(.data.show.title) - " + (.data.start|strptime("%Y-%m-%dT%H:%M:%S.000000Z") | strftime("%a %b %d %I:%M%p")) + " to " + (.data.end|strptime("%Y-%m-%dT%H:%M:%S.000000Z") | strftime("%I:%M%p"))' "${_json}");
+	#log "${_broadcast_friendly_name}";
+
+	log "${_c_standout}Updated ${_bid}:${_c_standout_end} ${_c_bold}${_broadcast_friendly_name}${_c_normal}";
+	hr
 
 	echo "UPDATE broadcasts SET tracks_processed=1 WHERE broadcast_id=${_bid}" \
 		| sqlite3 db/krcl-playlist-data.sqlite3
